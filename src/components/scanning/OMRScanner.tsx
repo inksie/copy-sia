@@ -1354,7 +1354,35 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
             }
           }
 
-          setCapturedImage(overlayCanvas.toDataURL('image/png'));
+          // Crop final preview to the inner paper area so corner markers are not
+          // visible in the result image.
+          const frameWForCrop = Math.abs(debugMarkers.topRight.x - debugMarkers.topLeft.x);
+          const frameHForCrop = Math.abs(debugMarkers.bottomLeft.y - debugMarkers.topLeft.y);
+          const insetX = Math.max(8, Math.round(frameWForCrop * 0.045));
+          const insetY = Math.max(8, Math.round(frameHForCrop * 0.045));
+
+          const left = Math.max(0, Math.floor(Math.min(debugMarkers.topLeft.x, debugMarkers.bottomLeft.x) + insetX));
+          const right = Math.min(overlayCanvas.width, Math.ceil(Math.max(debugMarkers.topRight.x, debugMarkers.bottomRight.x) - insetX));
+          const top = Math.max(0, Math.floor(Math.min(debugMarkers.topLeft.y, debugMarkers.topRight.y) + insetY));
+          const bottom = Math.min(overlayCanvas.height, Math.ceil(Math.max(debugMarkers.bottomLeft.y, debugMarkers.bottomRight.y) - insetY));
+
+          const cropW = Math.max(1, right - left);
+          const cropH = Math.max(1, bottom - top);
+
+          if (cropW > 20 && cropH > 20) {
+            const croppedCanvas = document.createElement('canvas');
+            croppedCanvas.width = cropW;
+            croppedCanvas.height = cropH;
+            const cCtx = croppedCanvas.getContext('2d');
+            if (cCtx) {
+              cCtx.drawImage(overlayCanvas, left, top, cropW, cropH, 0, 0, cropW, cropH);
+              setCapturedImage(croppedCanvas.toDataURL('image/png'));
+            } else {
+              setCapturedImage(overlayCanvas.toDataURL('image/png'));
+            }
+          } else {
+            setCapturedImage(overlayCanvas.toDataURL('image/png'));
+          }
         }
       }
 
