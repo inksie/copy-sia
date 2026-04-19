@@ -1622,7 +1622,7 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
     //
     // InnerAvg threshold raised to 120 (from 80): handles JPEG/scan compression
     // artefacts where markers appear as dark-gray (~90-110) instead of near-black.
-    // The uniformity check (qMax-qMin < 60) still rejects text, thin lines, circles.
+      // The uniformity check (qMax-qMin < 75) still rejects text, thin lines, circles.
 
     const baseSize = Math.max(10, Math.round(width * 0.025));
 
@@ -1688,11 +1688,12 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
 
             // ── Uniformity: all 4 sub-quadrants dark ──
             // Rejects circles (bright corners) and thin lines (mostly bright interior)
+            // Slightly relaxed threshold (75) to handle JPEG/scan compression artifacts
             const q1 = rectAvg(cx - hf, cy - hf, cx,      cy     );
             const q2 = rectAvg(cx,      cy - hf, cx + hf, cy     );
             const q3 = rectAvg(cx - hf, cy,      cx,      cy + hf);
             const q4 = rectAvg(cx,      cy,      cx + hf, cy + hf);
-            if (Math.max(q1, q2, q3, q4) - Math.min(q1, q2, q3, q4) > 60) continue;
+            if (Math.max(q1, q2, q3, q4) - Math.min(q1, q2, q3, q4) > 75) continue;
 
             // ── Surrounding ring: at least 2 sides must be bright ──
             const tR = rectAvg(cx - ro, cy - ro, cx + ro, cy - ri);
@@ -1733,7 +1734,7 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
             const q2 = rectAvg(cx, cy - hf, cx + hf, cy);
             const q3 = rectAvg(cx - hf, cy, cx, cy + hf);
             const q4 = rectAvg(cx, cy, cx + hf, cy + hf);
-            if (Math.max(q1, q2, q3, q4) - Math.min(q1, q2, q3, q4) > 60) continue;
+              if (Math.max(q1, q2, q3, q4) - Math.min(q1, q2, q3, q4) > 75) continue;
             const tR = rectAvg(cx - ro, cy - ro, cx + ro, cy - ri);
             const bR = rectAvg(cx - ro, cy + ri, cx + ro, cy + ro);
             const lR = rectAvg(cx - ro, cy - ri, cx - ri, cy + ri);
@@ -2355,12 +2356,13 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
     const idBubbleRY = bubbleRY * (3.5 / 3.8);
     const idMinR = Math.max(1, Math.min(idBubbleRX, idBubbleRY));
     const idSmallFactor = Math.max(0, Math.min(1, (4.0 - idMinR) / 2.0));
-    const idTier1Ratio = 0.69 + idSmallFactor * 0.02;
-    const idTier2Ratio = 0.82 + idSmallFactor * 0.03;
-    const idGapMin = 0.11 - idSmallFactor * 0.015;
-    const idAbsGapMin = 9 - idSmallFactor * 2;
-    const idFallbackDarkMax = 172;
-    const idFallbackSpreadMin = 7 - idSmallFactor * 1.5;
+    // Optimized ID detection for better recognition: match answer bubble sensitivity
+    const idTier1Ratio = 0.67 + idSmallFactor * 0.04;       // Lower for lighter marks
+    const idTier2Ratio = 0.80 + idSmallFactor * 0.04;       // Consistent with answers
+    const idGapMin = 0.09 - idSmallFactor * 0.02;           // Tighter gap requirement
+    const idAbsGapMin = 8 - idSmallFactor * 2;              // Absolute gap threshold
+    const idFallbackDarkMax = 174;                          // Fade tolerance
+    const idFallbackSpreadMin = 6.5 - idSmallFactor * 1.5;  // Spread sensitivity
 
     console.log('[ID] BubbleR:', idBubbleRX.toFixed(1), 'x', idBubbleRY.toFixed(1));
     console.log(`[ID] thresholds: tier1=${idTier1Ratio.toFixed(2)} tier2=${idTier2Ratio.toFixed(2)} gapRatio>${idGapMin.toFixed(2)} absGap>${idAbsGapMin.toFixed(1)}`);
@@ -2495,12 +2497,13 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
     const bubbleRY = (layout.bubbleDiameterNY * frameH) / 2;
     const minR = Math.max(1, Math.min(bubbleRX, bubbleRY));
     const smallBubbleFactor = Math.max(0, Math.min(1, (4.5 - minR) / 2.5));
-    const ansTier1Ratio = 0.72 + smallBubbleFactor * 0.03;
-    const ansTier2Ratio = 0.87 + smallBubbleFactor * 0.03;
-    const ansGapMin = 0.08 - smallBubbleFactor * 0.015;
-    const ansAbsGapMin = 7 - smallBubbleFactor * 2;
-    const ansFallbackDarkMax = 176;
-    const ansFallbackSpreadMin = 8 - smallBubbleFactor * 1.5;
+    // Optimized for ZipGrade-like accuracy: handle light pencil marks and fade
+    const ansTier1Ratio = 0.68 + smallBubbleFactor * 0.04;  // Lower → catches fainter marks
+    const ansTier2Ratio = 0.82 + smallBubbleFactor * 0.04;  // Adjusted for consistency
+    const ansGapMin = 0.07 - smallBubbleFactor * 0.02;      // Lower gap tolerance
+    const ansAbsGapMin = 6 - smallBubbleFactor * 1.5;       // Stricter absolute gap
+    const ansFallbackDarkMax = 180;                         // Raised for fade tolerance
+    const ansFallbackSpreadMin = 7 - smallBubbleFactor * 1.5;
 
     console.log(`[ANS] Frame: ${Math.round(frameW)}x${Math.round(frameH)}px, BubbleR: ${bubbleRX.toFixed(1)}x${bubbleRY.toFixed(1)}px`);
     console.log(`[ANS] thresholds: tier1=${ansTier1Ratio.toFixed(2)} tier2=${ansTier2Ratio.toFixed(2)} gapRatio>${ansGapMin.toFixed(2)} absGap>${ansAbsGapMin.toFixed(1)}`);
@@ -3252,6 +3255,59 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
             </div>
           </Card>
 
+          <div className="flex justify-center gap-4 flex-wrap">
+            <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors" onClick={() => {
+              setScanResult(null);
+              setDetectedAnswers([]);
+              setDetectedStudentId('');
+              setMatchedStudent(null);
+              setStudentIdError(null);
+              setMultipleAnswerQuestions([]);
+              setIdDoubleShadeColumns([]);
+              setRawIdDigits([]);
+              setAlignmentError(null);
+              setCapturedImage(null);
+              // Reset 200-item two-pass state
+              setScanPage(1);
+              setPage1Answers([]);
+              setPage1StudentId('');
+              isAutoCapturingRef.current = false;
+              setMode('camera');
+              startCamera();
+            }}>
+              <X className="w-4 h-4 mr-2" />
+              Discard & Scan Again
+            </Button>
+
+            <Button
+              onClick={() => {
+                if (idDoubleShadeColumns.length > 0) {
+                  toast.error('Student ID has multiple bubbles shaded. Please correct the ID before saving.');
+                  return;
+                }
+                if (studentIdError) {
+                  toast.error('Please correct the Student ID before saving. The student must be registered in this class.');
+                  return;
+                }
+                saveScanResult();
+              }}
+              disabled={saving || !!studentIdError || idDoubleShadeColumns.length > 0}
+              className={`transition-colors ${(studentIdError || idDoubleShadeColumns.length > 0) ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20'}`}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Result
+                </>
+              )}
+            </Button>
+          </div>
+
           {/* Answer Comparison */}
           <Card className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
             <h3 className="text-lg font-bold text-slate-800 mb-4">Answer Comparison</h3>
@@ -3348,81 +3404,29 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
                 </div>
               );
             })()}
-            <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 text-sm flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-4 bg-emerald-50 border-2 border-emerald-500 rounded" />
-                <span className="text-slate-600">Correct</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-4 bg-rose-50 border-2 border-rose-500 rounded" />
-                <span className="text-slate-600">Incorrect</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-4 bg-gray-50 border-2 border-gray-200 rounded" />
-                <span className="text-slate-500">No answer detected</span>
-              </div>
-              {multipleAnswerQuestions.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-4 bg-amber-50 border-2 border-amber-500 rounded relative">
-                    <AlertTriangle className="absolute -top-1 -right-1 w-3 h-3 text-amber-500" />
-                  </div>
-                  <span className="text-amber-700 font-medium">Multiple answers</span>
-                </div>
-              )}
-            </div>
           </Card>
 
-          <div className="flex justify-center gap-4 flex-wrap">
-            <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors" onClick={() => {
-              setScanResult(null);
-              setDetectedAnswers([]);
-              setDetectedStudentId('');
-              setMatchedStudent(null);
-              setStudentIdError(null);
-              setMultipleAnswerQuestions([]);
-              setIdDoubleShadeColumns([]);
-              setRawIdDigits([]);
-              setAlignmentError(null);
-              setCapturedImage(null);
-              // Reset 200-item two-pass state
-              setScanPage(1);
-              setPage1Answers([]);
-              setPage1StudentId('');
-              isAutoCapturingRef.current = false;
-              setMode('camera');
-              startCamera();
-            }}>
-              <X className="w-4 h-4 mr-2" />
-              Discard & Scan Again
-            </Button>
-
-            <Button
-              onClick={() => {
-                if (idDoubleShadeColumns.length > 0) {
-                  toast.error('Student ID has multiple bubbles shaded. Please correct the ID before saving.');
-                  return;
-                }
-                if (studentIdError) {
-                  toast.error('Please correct the Student ID before saving. The student must be registered in this class.');
-                  return;
-                }
-                saveScanResult();
-              }}
-              disabled={saving || !!studentIdError || idDoubleShadeColumns.length > 0}
-              className={`transition-colors ${(studentIdError || idDoubleShadeColumns.length > 0) ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20'}`}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Result
-                </>
-              )}
-            </Button>
+          <div className="flex items-center gap-4 text-sm flex-wrap px-2">
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-4 bg-emerald-50 border-2 border-emerald-500 rounded" />
+              <span className="text-slate-600">Correct</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-4 bg-rose-50 border-2 border-rose-500 rounded" />
+              <span className="text-slate-600">Incorrect</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-4 bg-gray-50 border-2 border-gray-200 rounded" />
+              <span className="text-slate-500">No answer detected</span>
+            </div>
+            {multipleAnswerQuestions.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-4 h-4 bg-amber-50 border-2 border-amber-500 rounded relative">
+                  <AlertTriangle className="absolute -top-1 -right-1 w-3 h-3 text-amber-500" />
+                </div>
+                <span className="text-amber-700 font-medium">Multiple answers</span>
+              </div>
+            )}
           </div>
         </div>
       )}
