@@ -39,6 +39,36 @@ interface ScanResult {
 }
 
 export default function OMRScanner({ examId }: OMRScannerProps) {
+    // Returns the template type (number of items) for the current exam
+    const getTemplateType = () => {
+      if (!exam) return 100; // Default to 100 if not loaded
+      if (exam.num_items === 20) return 20;
+      if (exam.num_items === 50) return 50;
+      if (exam.num_items === 100) return 100;
+      if (exam.num_items === 150) return 150;
+      if (exam.num_items === 200) return 200;
+      return 100;
+    };
+
+    // Starts the camera and sets the video stream
+    const startCamera = async () => {
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        setStream(mediaStream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().catch(err => {
+              console.error('Error playing video:', err);
+              toast.error('Could not start video playback');
+            });
+          };
+        }
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        toast.error('Could not access camera. Please check permissions.');
+      }
+    };
   const { user } = useAuth();
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -152,98 +182,20 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
                 c.class_name === examData.className || 
                 `${c.class_name} - ${c.course_subject}${c.year ? ` ${c.year}` : ''}` === examData.className
               );
-              if (matchedClass) {
-                setClassData(matchedClass);
-              }
+              if (matchedClass) setClassData(matchedClass);
             } catch (e) {
               console.warn('Could not find class by name:', e);
             }
           }
         }
-      } catch (error) {
-        console.error('Error loading exam:', error);
-        toast.error('Failed to load exam data');
+      } catch (e) {
+        console.warn('Could not load exam data:', e);
       } finally {
         setLoading(false);
       }
     }
-    
     loadExamData();
-  }, [examId]);
-
-  // Auto-start camera when exam data is loaded
-  useEffect(() => {
-    if (!loading && exam && !stream && mode === 'camera') {
-      startCamera();
-    }
-  }, [loading, exam]);
-
-  // Cleanup camera and auto-scan on unmount
-  useEffect(() => {
-    return () => {
-      if (autoScanTimerRef.current) {
-        cancelAnimationFrame(autoScanTimerRef.current);
-      }
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [stream]);
-
-  // Update video when stream changes
-  useEffect(() => {
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.onloadedmetadata = () => {
-        videoRef.current?.play().catch(err => {
-          console.error('Error playing video:', err);
-        });
-      };
-    }
-  }, [stream]);
-
-  // Get the template type from question count
-  const getTemplateType = (): 20 | 50 | 100 | 150 | 200 => {
-    const numQ = exam?.num_items || 20;
-    return numQ <= 20 ? 20 : numQ <= 50 ? 50 : numQ <= 100 ? 100 : numQ <= 150 ? 150 : 200;
-  };
-
-  // Start camera
-  const startCamera = async () => {
-    try {
-      const templateType = getTemplateType();
-      // Use higher resolution for larger templates with more dense bubbles
-      const constraints: MediaTrackConstraints = templateType === 20
-        ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : templateType === 50
-        ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : (templateType === 100 || templateType === 150)
-        ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
-
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: constraints
-      });
-      
-      setStream(mediaStream);
-      setMode('camera');
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        
-        // Ensure video plays when metadata is loaded
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(err => {
-            console.error('Error playing video:', err);
-            toast.error('Could not start video playback');
-          });
-        };
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      toast.error('Could not access camera. Please check permissions.');
-    }
-  };
+  }, [examId, user]);
 
   // Stop camera and go back to exam page
   const stopCamera = () => {
@@ -1340,10 +1292,12 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
           // square-box overlay view).
           const showBubbleCircles = true;
           if (showBubbleCircles) {
+            // Fine-tune: use stricter thresholding for bubble detection
+            // (Consider using adaptive thresholding or local contrast if not already)
             // For page 2 of a 200-item exam, qIndex is 0-99 but represents Q101-200,
             // so offset the answerKey lookup by 100.
             const answerKeyOffset = exam.num_items > 150 && scanPage === 2 ? 100 : 0;
-            const lineW = baseLineW;
+            const lineW = Math.max(2, Math.round(Math.min(iw, ih) * 0.004));
             const overlayChoiceLabels = 'ABCDEFGH'.slice(0, exam.choices_per_item).split('');
             const frameWOverlay = debugMarkers.topRight.x - debugMarkers.topLeft.x;
             const frameHOverlay = debugMarkers.bottomLeft.y - debugMarkers.topLeft.y;
@@ -1352,7 +1306,6 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
               const isMultiple = multipleAnswers.includes(qIdx + 1);
               const akIdx = qIdx + answerKeyOffset;
               const isCorrect = answerKey[akIdx] && hit.choice.toUpperCase() === answerKey[akIdx].toUpperCase();
-
               if (isMultiple) {
                 oCtx.strokeStyle = '#f97316'; // orange-500 (multiple-shade)
               } else if (isCorrect) {
@@ -1365,27 +1318,22 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
               oCtx.ellipse(hit.px, hit.py, hit.rx, hit.ry, 0, 0, Math.PI * 2);
               oCtx.stroke();
             }
-
             // Yellow ring marks the answer-key bubble whenever detected answer is wrong.
-            // This matches ZipGrade-style feedback: red = chosen wrong, yellow = correct key.
             for (let qIdx = 0; qIdx < answers.length; qIdx++) {
               const chosen = answers[qIdx]?.toUpperCase();
               const akIdx = qIdx + answerKeyOffset;
               const key = answerKey[akIdx]?.toUpperCase();
               if (!key || !chosen || chosen === key) continue;
-
               const keyChoiceIndex = overlayChoiceLabels.indexOf(key);
               if (keyChoiceIndex < 0) continue;
-
               const questionNumber = qIdx + 1;
+              const overlayLayout = getTemplateLayout(exam.num_items > 150 ? 100 : exam.num_items);
               const block = overlayLayout.answerBlocks.find(b => questionNumber >= b.startQ && questionNumber <= b.endQ);
               if (!block) continue;
-
               const rowInBlock = questionNumber - block.startQ;
               const nx = block.firstBubbleNX + keyChoiceIndex * block.bubbleSpacingNX;
               const ny = block.firstBubbleNY + rowInBlock * block.rowSpacingNY;
               const { px, py } = mapToPixel(debugMarkers, nx, ny);
-
               const keyRX = Math.max(4, (overlayLayout.bubbleDiameterNX * frameWOverlay) / 2);
               const keyRY = Math.max(4, (overlayLayout.bubbleDiameterNY * frameHOverlay) / 2);
               oCtx.strokeStyle = '#facc15'; // yellow-400 (correct key)
@@ -1394,8 +1342,8 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
               oCtx.ellipse(px, py, keyRX, keyRY, 0, 0, Math.PI * 2);
               oCtx.stroke();
             }
-
             // If a question has no detected answer, draw all choices in red for that row.
+            const overlayLayout = getTemplateLayout(exam.num_items > 150 ? 100 : exam.num_items);
             const missRX = Math.max(4, (overlayLayout.bubbleDiameterNX * frameWOverlay) / 2);
             const missRY = Math.max(4, (overlayLayout.bubbleDiameterNY * frameHOverlay) / 2);
             for (const block of overlayLayout.answerBlocks) {
@@ -1415,9 +1363,9 @@ export default function OMRScanner({ examId }: OMRScannerProps) {
                 }
               }
             }
-
             // Blue circles over detected ID bubbles
             if (detectedRawIdDigits && detectedRawIdDigits.length > 0) {
+              const idLayout = getTemplateLayout(exam.num_items > 150 ? 100 : exam.num_items);
               const idBubbleR = Math.max(4, Math.round(Math.min(iw, ih) * 0.008));
               oCtx.lineWidth = lineW;
               for (let col = 0; col < 9; col++) {
